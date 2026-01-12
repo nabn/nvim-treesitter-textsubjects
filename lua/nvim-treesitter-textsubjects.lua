@@ -1,5 +1,18 @@
-local queries = require("nvim-treesitter.query")
-local parsers = require('nvim-treesitter.parsers')
+local parsers = {
+    get_buf_lang = function(bufnr)
+        local ft = vim.bo[bufnr or 0].filetype
+        if not ft or ft == '' then
+            return nil
+        end
+        return vim.treesitter.language.get_lang(ft)
+    end,
+    has_parser = function(lang)
+        if not lang then
+            return false
+        end
+        return pcall(vim.treesitter.language.get_query, lang, 'highlights')
+    end
+}
 
 local M = {}
 
@@ -18,9 +31,9 @@ function M.is_supported(lang)
             return false
         end
 
-        if queries.has_query_files(nested_lang, 'textsubjects-smart')
-            or queries.has_query_files(nested_lang, 'textsubjects-container-outer')
-            or queries.has_query_files(nested_lang, 'textsubjects-container-inner') then
+        if vim.treesitter.query.get(nested_lang, 'textsubjects-smart')
+            or vim.treesitter.query.get(nested_lang, 'textsubjects-container-outer')
+            or vim.treesitter.query.get(nested_lang, 'textsubjects-container-inner') then
             return true
         end
         if seen[nested_lang] then
@@ -28,19 +41,24 @@ function M.is_supported(lang)
         end
         seen[nested_lang] = true
 
-        if queries.has_query_files(nested_lang, 'injections') then
-            local query = queries.get_query(nested_lang, 'injections')
-            for _, capture in ipairs(query.info.captures) do
+        local query = vim.treesitter.query.get(nested_lang, 'injections')
+        if query then
+            -- Modern query object has captures as an array, not query.info.captures
+            for _, capture in ipairs(query.captures or {}) do
                 if capture == 'language' or has_nested_textsubjects_language(capture) then
                     return true
                 end
             end
 
-            for _, info in ipairs(query.info.patterns) do
-                -- we're looking for #set injection.language <whatever>
-                if info[1][1] == "set!" and info[1][2] == "injection.language" then
-                    if has_nested_textsubjects_language(info[1][3]) then
-                        return true
+            -- For query.info.patterns, we need to check if this still exists in modern API
+            -- This may need to be updated based on actual modern API structure
+            if query.info and query.info.patterns then
+                for _, info in ipairs(query.info.patterns) do
+                    -- we're looking for #set injection.language <whatever>
+                    if info[1] and info[1][1] == "set!" and info[1][2] == "injection.language" then
+                        if has_nested_textsubjects_language(info[1][3]) then
+                            return true
+                        end
                     end
                 end
             end

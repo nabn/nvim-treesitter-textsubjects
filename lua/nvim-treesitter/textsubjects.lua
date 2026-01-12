@@ -1,6 +1,47 @@
-local parsers = require('nvim-treesitter.parsers')
-local queries = require('nvim-treesitter.query')
-local ts_utils = require('nvim-treesitter.ts_utils')
+-- Use modern Neovim treesitter APIs
+local parsers = {
+    get_buf_lang = function(bufnr)
+        local ft = vim.bo[bufnr or 0].filetype
+        if not ft or ft == '' then
+            return nil
+        end
+        return vim.treesitter.language.get_lang(ft)
+    end,
+    has_parser = function(lang)
+        if not lang then
+            return false
+        end
+        local ok = pcall(vim.treesitter.language.get_query, lang, 'highlights')
+        return ok
+    end
+}
+
+local queries = vim.treesitter.query
+
+local ts_utils = {
+    update_selection = function(bufnr, range, sel_mode)
+        local start_row, start_col, end_row, end_col = unpack(range)
+        
+        -- Convert to 1-based indexing for vim functions
+        start_row = start_row + 1
+        end_row = end_row + 1
+        start_col = start_col + 1
+        end_col = end_col + 1
+        
+        -- Set cursor to start position
+        vim.api.nvim_win_set_cursor(0, {start_row, start_col - 1})
+        
+        -- Enter visual mode
+        if sel_mode == 'V' then
+            vim.cmd('normal! V')
+        else
+            vim.cmd('normal! v')
+        end
+        
+        -- Set cursor to end position
+        vim.api.nvim_win_set_cursor(0, {end_row, end_col - 1})
+    end
+}
 local config = require('textsubjects.config')
 
 local M = {}
@@ -108,7 +149,30 @@ function M.select(query, restore_visual, sel_start, sel_end)
 
     local sel = normalize_selection(sel_start, sel_end)
     local best
-    local matches = queries.get_capture_matches_recursively(bufnr, '@range', query)
+    -- Use modern treesitter API to get matches
+    local parser = vim.treesitter.get_parser(bufnr, lang)
+    if not parser then return end
+    
+    local tree = parser:parse()[1]
+    if not tree then return end
+    
+    local query_obj = vim.treesitter.query.get(lang, query)
+    if not query_obj then return end
+    
+    local matches = {}
+    for id, node, metadata in query_obj:iter_captures(tree:root(), bufnr, 0, -1) do
+        local capture_name = query_obj.captures[id]
+        if capture_name == 'range' then
+            local start_row, start_col, end_row, end_col = node:range()
+            table.insert(matches, {
+                node = {
+                    start_pos = {start_row, start_col},
+                    end_pos = {end_row, end_col}
+                }
+            })
+        end
+    end
+    
     for _, m in pairs(matches) do
         local match_start_row, match_start_col = unpack(m.node.start_pos)
         local match_end_row, match_end_col = unpack(m.node.end_pos)
