@@ -10,11 +10,40 @@ local parsers = {
         if not lang then
             return false
         end
-        return pcall(vim.treesitter.language.get_query, lang, 'highlights')
+        -- Check if the language parser is available
+        local ok = pcall(vim.treesitter.language.add, lang)
+        return ok
     end
 }
 
 local M = {}
+
+-- Register the make-range! directive for modern Neovim
+-- This directive combines range of two captures into metadata.range
+-- Usage: (#make-range! "range" @_start @_end)
+local function register_make_range_directive()
+    pcall(vim.treesitter.query.add_directive, 'make-range!', function(match, _, _, predicate, metadata)
+        -- predicate[1] = "make-range!"
+        -- predicate[2] = "range" (the key name)
+        -- predicate[3] = capture id for start node
+        -- predicate[4] = capture id for end node
+        local start_id = predicate[3]
+        local end_id = predicate[4]
+
+        -- In modern Neovim, match[id] is a list of nodes, not a single node
+        local start_nodes = match[start_id]
+        local end_nodes = match[end_id]
+
+        local start_node = start_nodes and start_nodes[1]
+        local end_node = end_nodes and end_nodes[#end_nodes]
+
+        if start_node and end_node then
+            local start_row, start_col = start_node:range()
+            local _, _, end_row, end_col = end_node:range()
+            metadata.range = { start_row, start_col, end_row, end_col }
+        end
+    end, { force = true, all = true })
+end
 
 function M.configure(config_overrides)
     require('textsubjects.config').set(config_overrides)
@@ -71,6 +100,9 @@ function M.is_supported(lang)
 end
 
 function M.init()
+    -- Register custom directive before setting up autocmds
+    register_make_range_directive()
+
     if vim.fn.has('nvim-0.9') == 1 then
         vim.api.nvim_create_autocmd({ 'FileType' }, {
             callback = function(details)

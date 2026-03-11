@@ -11,7 +11,8 @@ local parsers = {
         if not lang then
             return false
         end
-        local ok = pcall(vim.treesitter.language.get_query, lang, 'highlights')
+        -- Check if the language parser is available
+        local ok = pcall(vim.treesitter.language.add, lang)
         return ok
     end
 }
@@ -160,10 +161,10 @@ function M.select(query, restore_visual, sel_start, sel_end)
     if not query_obj then return end
     
     local matches = {}
-    for id, node, metadata in query_obj:iter_captures(tree:root(), bufnr, 0, -1) do
-        local capture_name = query_obj.captures[id]
-        if capture_name == 'range' then
-            local start_row, start_col, end_row, end_col = node:range()
+    -- Use iter_matches to get access to metadata where #make-range! stores the range
+    for _, match, metadata in query_obj:iter_matches(tree:root(), bufnr, 0, -1, { all = true }) do
+        if metadata and metadata.range then
+            local start_row, start_col, end_row, end_col = unpack(metadata.range)
             table.insert(matches, {
                 node = {
                     start_pos = {start_row, start_col},
