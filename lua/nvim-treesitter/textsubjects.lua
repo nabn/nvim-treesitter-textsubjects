@@ -23,12 +23,14 @@ local ts_utils = {
     update_selection = function(bufnr, range, sel_mode)
         local start_row, start_col, end_row, end_col = unpack(range)
         
-        -- Convert to 1-based indexing for vim functions
+        -- Convert to 1-based indexing for vim functions (rows are 1-indexed)
         start_row = start_row + 1
         end_row = end_row + 1
+        -- start_col is inclusive/0-indexed, convert to 1-based
         start_col = start_col + 1
-        end_col = end_col + 1
-        
+        -- end_col is exclusive/0-indexed (tree-sitter convention), keep as-is
+        -- since nvim_win_set_cursor uses 0-indexed cols and we need end_col - 1
+
         -- Set cursor to start position
         vim.api.nvim_win_set_cursor(0, {start_row, start_col - 1})
         
